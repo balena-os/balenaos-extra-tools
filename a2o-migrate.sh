@@ -99,6 +99,7 @@ sed -i "s/aufs/overlay2/g" /lib/systemd/system/balena.service
 if [ -f "/etc/systemd/system/balena.service.d/balena.conf" ]; then
 	sed -i "s/aufs/overlay2/g" /etc/systemd/system/balena.service.d/balena.conf
 fi
+systemctl daemon-reload
 
 log "Enjoy overlay2!"
 mount -o remount,ro /
