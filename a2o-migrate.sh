@@ -27,11 +27,11 @@ clean_containers () {
 	systemctl stop update-resin-supervisor
 	systemctl stop resin-supervisor
 	systemctl start balena
-	if [ -n "$("$ENGINE" ps -q)" ]; then
+	if [ -n "$("$ENGINE" ps -a -q)" ]; then
 		log "Found containers stopping ..."
-		"$ENGINE" stop "$("$ENGINE" ps -q)"
+		"$ENGINE" stop "$("$ENGINE" ps -a -q)"
 		log "Found containers removing ..."
-		"$ENGINE" rm "$("$ENGINE" ps -q)"
+		"$ENGINE" rm "$("$ENGINE" ps -a -q)"
 		log "Done."
 	fi
 	systemctl stop balena
