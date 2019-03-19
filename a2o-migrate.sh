@@ -22,19 +22,10 @@ log () {
 }
 
 clean_containers () {
-	# Make sure no new containers come up or are running
 	log "Stopping systemd services ..."
 	systemctl stop update-resin-supervisor.timer
 	systemctl stop update-resin-supervisor
 	systemctl stop resin-supervisor
-	systemctl start balena
-	if [ -n "$("$ENGINE" ps -a -q)" ]; then
-		log "Found containers stopping ..."
-		"$ENGINE" stop "$("$ENGINE" ps -a -q)" &> /dev/null
-		log "Found containers removing ..."
-		"$ENGINE" rm "$("$ENGINE" ps -a -q)" &> /dev/null
-		log "Done."
-	fi
 	systemctl stop balena
 }
 
@@ -87,10 +78,48 @@ for aufs_layerpath in "$DOCKERDIR"/aufs/diff/*; do
 		mkdir -p "$OVERLAYDIR/$layer/work"
 	fi
 
+	# Handle aufs metadata files
+	whiteoutprefix=".wh."
+	whiteoutmetaprefix="${whiteoutprefix}${whiteoutprefix}"
+	whiteoutopaquedir="${whiteoutmetaprefix}.opq"
+	log "------> Migrating AUFS metadata..."
+	for metadata_entry in $(find "$aufs_layerpath" -name "${whiteoutprefix}*"); do
+		metadata_entry_base="$(basename "$metadata_entry")"
+		case $metadata_entry_base in
+			${whiteoutopaquedir})
+				# AUFS .wh..wh.opq -> OVERLAYFS xattr "trusted.overlay.opaque" "y"
+				setfattr -n "trusted.overlay.opaque" -v "y" "$(dirname "$metadata_entry")"
+				rm "$metadata_entry"
+				;;
+			${whiteoutmetaprefix}*)
+				# We are interested only in opaque meta data - everything else can be discarded
+				rm -r "$metadata_entry"
+				;;
+			${whiteoutprefix}*)
+				# AUFS .wh.* file -> OVERLAYFS char dev node 0:0
+				uid="$(stat -c '%u' "$metadata_entry")"
+				gid="$(stat -c '%g' "$metadata_entry")"
+				node="$(dirname "$metadata_entry")/${metadata_entry_base/#$whiteoutprefix/}"
+				rm "$metadata_entry"
+				mknod "$node" c 0 0
+				chown "$uid:$gid" "$node"
+				;;
+
+		esac
+	done
 
 	# diff
 	mkdir -p "$OVERLAYDIR/$layer"
 	mv "$aufs_layerpath" "$OVERLAYDIR/$layer/diff"
+done
+
+# containers
+log "Migrating containers ..."
+for container_path in "$DOCKERDIR"/containers/*; do
+	container="$(basename "$container_path")"
+	log "---> $container"
+	jq '.Driver="overlay2"' "$container_path/config.v2.json" > "/tmp/a2o-migrate-container-$container.tmp"
+	mv "/tmp/a2o-migrate-container-$container.tmp" "$container_path/config.v2.json"
 done
 
 # image
